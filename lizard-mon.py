@@ -20,6 +20,9 @@ def main():
     parser.add_argument(
         '--path', default='.', help='directory to treat as current working directory'
     )
+    parser.add_argument(
+        '-v', action='count', default=0, dest="verbosity", help='level of verbosity'
+    )
     args = parser.parse_args()
     base_path = args.path
 
@@ -41,7 +44,7 @@ def main():
         repo = get_repo(root_repo_dir, target.name, target.repo_info)
 
         print(f"  running analysis on {repo.working_tree_dir}")
-        analysis_results = analyse_repo(repo, target.analysis_settings)
+        analysis_results = analyse_repo(repo, target.analysis_settings, args.verbosity)
         overall_analysis_results.overall.merge_with(analysis_results.overall)
         overall_analysis_results.targets[target.name] = analysis_results
         print(f"  results for this repo: {overall_analysis_results.overall}")
@@ -68,7 +71,7 @@ def main():
         history_file.write(f"{json.dumps(data)}\n")
 
 
-def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings') -> 'TargetResultCache':
+def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings', verbosity: int) -> 'TargetResultCache':
     result = TargetResultCache(AnalysisResult(0, 0), {})
 
     analysis_dir = os.path.relpath(repo.working_tree_dir)
@@ -97,7 +100,8 @@ def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisS
     file_analysis = typing.cast(typing.Iterator[lizard.FileInformation], analysis)
     thresholds = analysis_settings.limits
     for analysed_file in file_analysis:
-        print(f"  - file: {analysed_file.filename} (NLOC={analysed_file.nloc})")
+        if verbosity > 0:
+            print(f"  - file: {analysed_file.filename} (NLOC={analysed_file.nloc})")
 
         violations_in_this_file = 0
         for fn in analysed_file.function_list:
@@ -113,11 +117,13 @@ def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisS
             violations = lizard_mon.config.list_limit_violations(values, thresholds)
             violations_in_this_file += 1
 
-            print(f"    - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
-            print(f"      violations: {', '.join(violations)}")
+            if verbosity > 1:
+                print(f"    - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
+                print(f"      violations: {', '.join(violations)}")
 
         file_result = AnalysisResult(violations_in_this_file, analysed_file.nloc)
-        print(f"    results for this file: {file_result}")
+        if verbosity > 0:
+            print(f"    results for this file: {file_result}")
         result.overall.merge_with(file_result)
         result.files[analysed_file.filename] = file_result
 
