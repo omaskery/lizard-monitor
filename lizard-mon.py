@@ -18,13 +18,15 @@ def main():
         description="utility for applying the lizard.py analysis tools to git repositories automatically"
     )
     parser.add_argument(
-        '--path', default='.', help='directory to treat as current working directory'
+        '--path', default='.', help='directory to pretend lizard-mon.py was invoked from'
     )
     parser.add_argument(
         '-v', action='count', default=0, dest="verbosity", help='level of verbosity'
     )
     args = parser.parse_args()
-    base_path = args.path
+
+    os.chdir(args.path)
+    base_path = "."
 
     config_path = os.path.join(base_path, "lizard-mon.yml")
     targets = lizard_mon.config.load_config(config_path)
@@ -58,7 +60,7 @@ def main():
     with open(differences_path, 'w') as differences_file:
         yaml.safe_dump(differences.to_yaml(), differences_file, default_flow_style=False)
 
-    history_path = os.path.join(base_path, "history.json")
+    history_path = os.path.join(base_path, "history.ndjson")
     with open(history_path, 'a') as history_file:
         data = {
             "timestamp": datetime.datetime.utcnow().isoformat(),
