@@ -21,50 +21,75 @@ def main():
     config_path = os.path.join(base_path, "lizard-mon.yml")
     targets = lizard_mon.config.load_config(config_path)
 
+    overall_analysis_results = AnalysisResult(0, 0)
     for target in targets:
         print(f"{target.name} ({target.repo_info.url}):")
         root_repo_dir = os.path.join(base_path, "repos")
         repo = get_repo(root_repo_dir, target.name, target.repo_info)
 
         print(f"  running analysis on {repo.working_tree_dir}")
-        analyse_repo(repo, target.analysis_settings)
+        analysis_results = analyse_repo(repo, target.analysis_settings)
+        target_analysis_results = AnalysisResult(0, 0)
+        for result in analysis_results.values():
+            target_analysis_results.merge_with(result)
+        overall_analysis_results.merge_with(target_analysis_results)
+        print(f"  results for this repo: {target_analysis_results}")
+    print(f"overall results: {overall_analysis_results}")
 
 
-def analyse_repo(repo: git.Repo, analysis_settings: 'lizardmon.config.AnalysisSettings'):
+def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings'):
+    violation_record = {}
+
+    analysis_dir = os.path.relpath(repo.working_tree_dir)
+
+    def patch_relative_exclude_patterns(pattern):
+        if pattern.startswith("./") or pattern.startswith(".\\"):
+            patched = os.path.join(analysis_dir, pattern[2:])
+        else:
+            patched = pattern
+        patched = patched.replace("\\", "/")
+        return patched
+
+    exclusion_patterns = [
+        patch_relative_exclude_patterns(pattern)
+        for pattern in analysis_settings.exclusion_patterns
+    ]
+    for pattern in exclusion_patterns:
+        print("  excluding:", pattern)
     analysis = lizard.analyze(
-        [repo.working_tree_dir],
-        analysis_settings.exclusions,
-        threads=4,
+        paths=[analysis_dir],
+        exclude_pattern=exclusion_patterns,
+        threads=os.cpu_count(),
+        exts=lizard.get_extensions([]),
         lans=analysis_settings.languages,
-        exts=lizard.get_extensions([])
     )
     analysis = typing.cast(typing.List[lizard.FileInformation], analysis)
+    thresholds = analysis_settings.limits
     for result in analysis:
-        shown_file = False
+        print(f"  - file: {result.filename} (NLOC={result.nloc})")
+        violations_in_this_file = 0
+
         for fn in result.function_list:
-            ccn = fn.cyclomatic_complexity
-            lines = fn.nloc
-            parameters = len(fn.parameters)
+            values = lizard_mon.config.AnalysisLimits(
+                fn.cyclomatic_complexity,
+                fn.nloc,
+                len(fn.parameters),
+            )
 
-            violations = []
-            if ccn >= analysis_settings.limits.ccn:
-                violations.append(f"ccn {ccn} exceeds limit {analysis_settings.limits.ccn}")
-            if lines >= analysis_settings.limits.lines:
-                violations.append(f"line count {lines} exceeds limit {analysis_settings.limits.lines}")
-            if parameters >= analysis_settings.limits.parameters:
-                violations.append(
-                    f"parameter count {parameters} exceeds limit {analysis_settings.limits.parameters}"
-                )
-
-            if len(violations) == 0:
+            if not values.exceeds(thresholds):
                 continue
 
-            if not shown_file:
-                shown_file = True
-                print(f"  file: {result.filename} (NLOC={result.nloc})")
+            violations = lizard_mon.config.list_limit_violations(values, thresholds)
+            violations_in_this_file += 1
 
-            print(f"   - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
-            print(f"     violations: {', '.join(violations)}")
+            print(f"    - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
+            print(f"      violations: {', '.join(violations)}")
+
+        file_analysis_result = AnalysisResult(violations_in_this_file, result.nloc)
+        print(f"    results for this file: {file_analysis_result}")
+        violation_record[result.filename] = file_analysis_result
+
+    return violation_record
 
 
 def die(message, exit_code=-1) -> typing.NoReturn:
@@ -91,6 +116,20 @@ def get_repo(repos_dir, name, repo_info):
             print(f"changing branch [{repo.active_branch.name} -> {repo_info.branch}]")
             repo.heads[repo_info.branch].checkout()
     return repo
+
+
+class AnalysisResult:
+
+    def __init__(self, violation_count: int, lines_of_code: int):
+        self.violation_count = violation_count
+        self.lines_of_code = lines_of_code
+
+    def merge_with(self, other: 'AnalysisResult'):
+        self.violation_count += other.violation_count
+        self.lines_of_code += other.lines_of_code
+
+    def __str__(self):
+        return f"[violations: {self.violation_count}, NLOC={self.lines_of_code}]"
 
 
 if __name__ == "__main__":
