@@ -1,8 +1,10 @@
 from lizard_mon.exceptions import *
 import lizard_mon
+import itertools
 import argparse
 import typing
 import lizard
+import yaml
 import git
 import sys
 import os
@@ -21,7 +23,15 @@ def main():
     config_path = os.path.join(base_path, "lizard-mon.yml")
     targets = lizard_mon.config.load_config(config_path)
 
-    overall_analysis_results = AnalysisResult(0, 0)
+    cache_path = os.path.join(base_path, "previous-results.yml")
+    if os.path.isfile(cache_path):
+        with open(cache_path) as cache_file:
+            cache = yaml.safe_load(cache_file)
+            previous_results = ResultCache.from_yaml(cache)
+    else:
+        previous_results = ResultCache(AnalysisResult(0, 0), {})
+
+    overall_analysis_results = ResultCache(AnalysisResult(0, 0), {})
     for target in targets:
         print(f"{target.name} ({target.repo_info.url}):")
         root_repo_dir = os.path.join(base_path, "repos")
@@ -29,16 +39,22 @@ def main():
 
         print(f"  running analysis on {repo.working_tree_dir}")
         analysis_results = analyse_repo(repo, target.analysis_settings)
-        target_analysis_results = AnalysisResult(0, 0)
-        for result in analysis_results.values():
-            target_analysis_results.merge_with(result)
-        overall_analysis_results.merge_with(target_analysis_results)
-        print(f"  results for this repo: {target_analysis_results}")
-    print(f"overall results: {overall_analysis_results}")
+        overall_analysis_results.overall.merge_with(analysis_results.overall)
+        overall_analysis_results.targets[target.name] = analysis_results
+        print(f"  results for this repo: {overall_analysis_results.overall}")
+    print(f"overall results: {overall_analysis_results.overall}")
+
+    with open(cache_path, 'w') as cache_file:
+        yaml.safe_dump(overall_analysis_results.to_yaml(), cache_file, default_flow_style=False)
+
+    differences_path = os.path.join(base_path, "differences.yml")
+    differences = overall_analysis_results.difference(previous_results)
+    with open(differences_path, 'w') as differences_file:
+        yaml.safe_dump(differences.to_yaml(), differences_file, default_flow_style=False)
 
 
-def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings'):
-    violation_record = {}
+def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings') -> 'TargetResultCache':
+    result = TargetResultCache(AnalysisResult(0, 0), {})
 
     analysis_dir = os.path.relpath(repo.working_tree_dir)
 
@@ -63,13 +79,13 @@ def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisS
         exts=lizard.get_extensions([]),
         lans=analysis_settings.languages,
     )
-    analysis = typing.cast(typing.List[lizard.FileInformation], analysis)
+    file_analysis = typing.cast(typing.Iterator[lizard.FileInformation], analysis)
     thresholds = analysis_settings.limits
-    for result in analysis:
-        print(f"  - file: {result.filename} (NLOC={result.nloc})")
-        violations_in_this_file = 0
+    for analysed_file in file_analysis:
+        print(f"  - file: {analysed_file.filename} (NLOC={analysed_file.nloc})")
 
-        for fn in result.function_list:
+        violations_in_this_file = 0
+        for fn in analysed_file.function_list:
             values = lizard_mon.config.AnalysisLimits(
                 fn.cyclomatic_complexity,
                 fn.nloc,
@@ -85,11 +101,12 @@ def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisS
             print(f"    - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
             print(f"      violations: {', '.join(violations)}")
 
-        file_analysis_result = AnalysisResult(violations_in_this_file, result.nloc)
-        print(f"    results for this file: {file_analysis_result}")
-        violation_record[result.filename] = file_analysis_result
+        file_result = AnalysisResult(violations_in_this_file, analysed_file.nloc)
+        print(f"    results for this file: {file_result}")
+        result.overall.merge_with(file_result)
+        result.files[analysed_file.filename] = file_result
 
-    return violation_record
+    return result
 
 
 def die(message, exit_code=-1) -> typing.NoReturn:
@@ -128,8 +145,89 @@ class AnalysisResult:
         self.violation_count += other.violation_count
         self.lines_of_code += other.lines_of_code
 
+    def difference(self, other: 'AnalysisResult') -> 'AnalysisResult':
+        return AnalysisResult(
+            violation_count=self.violation_count-other.violation_count,
+            lines_of_code=self.lines_of_code-other.lines_of_code,
+        )
+
     def __str__(self):
         return f"[violations: {self.violation_count}, NLOC={self.lines_of_code}]"
+
+    def to_yaml(self):
+        return {
+            "violation_count": self.violation_count,
+            "lines_of_code": self.lines_of_code,
+        }
+
+    @staticmethod
+    def from_yaml(data) -> 'AnalysisResult':
+        return AnalysisResult(
+            data["violation_count"],
+            data["lines_of_code"],
+        )
+
+
+class ResultCache:
+
+    def __init__(self, overall: AnalysisResult, targets: typing.Dict[str, 'TargetResultCache']):
+        self.overall = overall
+        self.targets = targets
+
+    def difference(self, other: 'ResultCache') -> 'ResultCache':
+        targets = {}
+        for key in set(itertools.chain(self.targets.keys(), other.targets.keys())):
+            target_a = self.targets.get(key, TargetResultCache(AnalysisResult(0, 0), {}))
+            target_b = other.targets.get(key, TargetResultCache(AnalysisResult(0, 0), {}))
+            targets[key] = target_a.difference(target_b)
+        return ResultCache(
+            overall=self.overall.difference(other.overall),
+            targets=targets,
+        )
+
+    def to_yaml(self):
+        return {
+            "overall": self.overall.to_yaml(),
+            "targets": dict([(name, target.to_yaml()) for name, target in self.targets.items()]),
+        }
+
+    @staticmethod
+    def from_yaml(data):
+        return ResultCache(
+            overall=AnalysisResult.from_yaml(data["overall"]),
+            targets=dict([(name, TargetResultCache.from_yaml(target)) for name, target in data["targets"].items()]),
+        )
+
+
+class TargetResultCache:
+
+    def __init__(self, overall: AnalysisResult, files: typing.Dict[str, 'AnalysisResult']):
+        self.overall = overall
+        self.files = files
+
+    def difference(self, other: 'TargetResultCache') -> 'TargetResultCache':
+        files = {}
+        for key in set(itertools.chain(self.files.keys(), other.files.keys())):
+            file_a = self.files.get(key, AnalysisResult(0, 0))
+            file_b = other.files.get(key, AnalysisResult(0, 0))
+            files[key] = file_a.difference(file_b)
+        return TargetResultCache(
+            overall=self.overall.difference(other.overall),
+            files=files,
+        )
+
+    def to_yaml(self):
+        return {
+            "overall": self.overall.to_yaml(),
+            "files": dict([(name, file.to_yaml()) for name, file in self.files.items()]),
+        }
+
+    @staticmethod
+    def from_yaml(data):
+        return TargetResultCache(
+            overall=AnalysisResult.from_yaml(data["overall"]),
+            files=dict([(name, AnalysisResult.from_yaml(file)) for name, file in data["files"].items()]),
+        )
 
 
 if __name__ == "__main__":
