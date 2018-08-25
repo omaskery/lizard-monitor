@@ -47,7 +47,7 @@ def main():
         analysis_results = analyse_repo(repo, target.analysis_settings, args.verbosity)
         overall_analysis_results.overall.merge_with(analysis_results.overall)
         overall_analysis_results.targets[target.name] = analysis_results
-        print(f"  results for this repo: {overall_analysis_results.overall}")
+        print(f"  results for this repo: {analysis_results.overall}")
     print(f"overall results: {overall_analysis_results.overall}")
 
     with open(cache_path, 'w') as cache_file:
