@@ -7,10 +7,6 @@ import git
 import sys
 import os
 
-CAT_CCN = lizard_mon.analysis.Category("cyclomatic complexity violations")
-CAT_LINES = lizard_mon.analysis.Category("lines of code violations")
-CAT_PARAMS = lizard_mon.analysis.Category("parameter count violations")
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -25,24 +21,16 @@ def main():
     config_path = os.path.join(base_path, "lizard-mon.yml")
     targets = lizard_mon.config.load_config(config_path)
 
-    analysis_stack = lizard_mon.analysis.Stack(
-        CAT_CCN,
-        CAT_LINES,
-        CAT_PARAMS,
-    )
-    with analysis_stack.push("all repos"):
-        for target in targets:
-            print(f"{target.name} ({target.repo_info.url}):")
-            root_repo_dir = os.path.join(base_path, "repos")
-            repo = get_repo(root_repo_dir, target.name, target.repo_info)
+    for target in targets:
+        print(f"{target.name} ({target.repo_info.url}):")
+        root_repo_dir = os.path.join(base_path, "repos")
+        repo = get_repo(root_repo_dir, target.name, target.repo_info)
 
-            print(f"  running analysis on {repo.working_tree_dir}")
-            with analysis_stack.push(target.name):
-                analyse_repo(analysis_stack, repo, target.analysis_settings)
+        print(f"  running analysis on {repo.working_tree_dir}")
+        analyse_repo(repo, target.analysis_settings)
 
 
-def analyse_repo(analysis_stack: 'lizardmon.analysis.Stack', repo: git.Repo,
-                 analysis_settings: 'lizardmon.config.AnalysisSettings'):
+def analyse_repo(repo: git.Repo, analysis_settings: 'lizardmon.config.AnalysisSettings'):
     analysis = lizard.analyze(
         [repo.working_tree_dir],
         analysis_settings.exclusions,
