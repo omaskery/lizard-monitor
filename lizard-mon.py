@@ -2,8 +2,11 @@ from lizard_mon.exceptions import *
 import lizard_mon
 import itertools
 import argparse
+import datetime
 import typing
 import lizard
+import json
+import tqdm
 import yaml
 import git
 import sys
@@ -51,6 +54,18 @@ def main():
     differences = overall_analysis_results.difference(previous_results)
     with open(differences_path, 'w') as differences_file:
         yaml.safe_dump(differences.to_yaml(), differences_file, default_flow_style=False)
+
+    history_path = os.path.join(base_path, "history.json")
+    with open(history_path, 'a') as history_file:
+        data = {
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "overall": overall_analysis_results.overall.to_yaml(),
+            "targets": dict([
+                (name, target.overall.to_yaml())
+                for name, target in overall_analysis_results.targets.items()
+            ]),
+        }
+        history_file.write(f"{json.dumps(data)}\n")
 
 
 def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings') -> 'TargetResultCache':
@@ -118,20 +133,20 @@ def get_repo(repos_dir, name, repo_info):
     repo_working_dir = os.path.join(repos_dir, name)
     if not os.path.isdir(repo_working_dir):
         print(f"  cloning '{name}' for first time from: {repo_info.url}")
-        repo = git.Repo.clone_from(repo_info.url, repo_working_dir, branch=repo_info.branch)
+        with ProgressPrinter() as progress:
+            repo = git.Repo.clone_from(repo_info.url, repo_working_dir, branch=repo_info.branch, progress=progress)
     else:
         repo = git.Repo(repo_working_dir)
         if len(repo.remotes) < 1:
-            print(f"  warning: target {name} repo has no remotes to pull from")
+            raise LizardMonException(f"target {name} repo has no remotes to pull from")
         else:
             remote = repo.remotes[0]
             print(f"  pulling any changes from remote {remote.name}")
-            remote.pull()
+            with ProgressPrinter() as progress:
+                remote.pull(progress=progress)
         if repo.active_branch.name != repo_info.branch:
-            if repo_info.branch not in repo.heads:
-                raise LizardMonException(f"target {name} repo has no branch '{repo_info.branch}'")
-            print(f"changing branch [{repo.active_branch.name} -> {repo_info.branch}]")
-            repo.heads[repo_info.branch].checkout()
+            print(f"  checking out branch {repo_info.branch}")
+            repo.git.checkout(repo_info.branch)
     return repo
 
 
@@ -228,6 +243,38 @@ class TargetResultCache:
             overall=AnalysisResult.from_yaml(data["overall"]),
             files=dict([(name, AnalysisResult.from_yaml(file)) for name, file in data["files"].items()]),
         )
+
+
+class ProgressPrinter(git.RemoteProgress):
+
+    def __init__(self):
+        super().__init__()
+        self.bar = typing.cast(tqdm.tqdm, None)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.bar is not None:
+            self.bar.close()
+
+    def update(self, op_code, cur_count, max_count=None, message=''):
+        if self.bar is None or int(cur_count or 0) < self.bar.n:
+            if self.bar is not None:
+                self.bar.close()
+            self.bar = tqdm.tqdm(
+                total=int(max_count or 100),
+                initial=int(cur_count or 0),
+                leave=False,
+            )
+        count = int(cur_count or 0)
+        delta = count - self.bar.n
+        self.bar.set_description(message, False)
+        self.bar.update(delta)
+
+    def line_dropped(self, line):
+        # print("dropped:", line)
+        pass
 
 
 if __name__ == "__main__":
