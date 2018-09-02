@@ -22,9 +22,15 @@ def main():
 
     with open(args.output, 'w', newline='') as output_file:
         fieldnames = ["timestamp"]
+
+        def add_columns_for(root):
+            fieldnames.append(root + "-nloc")
+            fieldnames.append(root + "-violations")
+
+        add_columns_for("overall")
         for target in target_list:
-            fieldnames.append(target + "-nloc")
-            fieldnames.append(target + "-violations")
+            add_columns_for(f"tgt:{target}")
+
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
         for timestamp, result in iterate_history_file(args.history_path):
@@ -32,9 +38,11 @@ def main():
                 (key, "") for key in fieldnames
             ])
             new_row["timestamp"] = timestamp
+            new_row["overall-nloc"] = result.overall.lines_of_code
+            new_row["overall-violations"] = result.overall.violation_count
             for name, target in result.targets.items():
-                new_row[name + "-nloc"] = target.lines_of_code
-                new_row[name + "-violations"] = target.violation_count
+                new_row[f"tgt:{name}-nloc"] = target.lines_of_code
+                new_row[f"tgt:{name}-violations"] = target.violation_count
             writer.writerow(new_row)
 
 
