@@ -26,6 +26,7 @@ def main():
         def add_columns_for(root):
             fieldnames.append(root + "-nloc")
             fieldnames.append(root + "-violations")
+            fieldnames.append(root + "-violations-normalised")
 
         add_columns_for("overall")
         for target in target_list:
@@ -40,10 +41,18 @@ def main():
             new_row["timestamp"] = timestamp
             new_row["overall-nloc"] = result.overall.lines_of_code
             new_row["overall-violations"] = result.overall.violation_count
+            new_row["overall-violations-normalised"] = normalise_violations(result.overall)
             for name, target in result.targets.items():
                 new_row[f"tgt:{name}-nloc"] = target.lines_of_code
                 new_row[f"tgt:{name}-violations"] = target.violation_count
+                new_row[f"tgt:{name}-violations-normalised"] = normalise_violations(target)
             writer.writerow(new_row)
+
+
+def normalise_violations(result: results.AnalysisResult):
+    if result.violation_count <= 0:
+        return 0.0
+    return float(result.violation_count) / float(result.lines_of_code)
 
 
 def scan_for_targets(history_path: str) -> typing.List[str]:
