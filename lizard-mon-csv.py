@@ -16,6 +16,7 @@ HEADER_TIMESTAMP = "timestamp"
 HEADER_NLOC = "nloc"
 HEADER_VIOLATIONS = "violations"
 HEADER_VIOLATIONS_NORMALISED = "violations-normalised"
+HEADER_FILES = "files"
 
 
 def main():
@@ -41,6 +42,7 @@ def main():
             fieldnames.append(header(root, HEADER_NLOC))
             fieldnames.append(header(root, HEADER_VIOLATIONS))
             fieldnames.append(header(root, HEADER_VIOLATIONS_NORMALISED))
+            fieldnames.append(header(root, HEADER_FILES))
 
         add_columns_for(OVERALL_HEADER_PREFIX)
         for target in target_list:
@@ -57,6 +59,7 @@ def main():
                 new_row[header(root, HEADER_NLOC)] = str(result.lines_of_code)
                 new_row[header(root, HEADER_VIOLATIONS)] = str(result.violation_count)
                 new_row[header(root, HEADER_VIOLATIONS_NORMALISED)] = str(normalise_violations(result))
+                new_row[header(root, HEADER_FILES)] = str(result.file_count)
 
             new_row[header(HEADER_TIMESTAMP)] = str(timestamp)
             set_columns_for(OVERALL_HEADER_PREFIX, result_cache.overall)
