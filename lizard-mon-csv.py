@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from lizard_mon import results
 import dateutil.parser
 import datetime
