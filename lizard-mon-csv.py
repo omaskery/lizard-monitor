@@ -48,18 +48,20 @@ def main():
 
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
-        for timestamp, result in iterate_history_file(args.history_path):
+        for timestamp, result_cache in iterate_history_file(args.history_path):
             new_row = dict([
                 (key, "") for key in fieldnames
             ])
+
+            def set_columns_for(root, result):
+                new_row[header(root, HEADER_NLOC)] = result.lines_of_code
+                new_row[header(root, HEADER_VIOLATIONS)] = result.violations_count
+                new_row[header(root, HEADER_VIOLATIONS_NORMALISED)] = result.normalise_violations(result)
+
             new_row[header(HEADER_TIMESTAMP)] = timestamp
-            new_row[header(OVERALL_HEADER_PREFIX, HEADER_NLOC)] = result.overall.lines_of_code
-            new_row[header(OVERALL_HEADER_PREFIX, HEADER_VIOLATIONS)] = result.overall.violation_count
-            new_row[header(OVERALL_HEADER_PREFIX, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(result.overall)
-            for name, target in result.targets.items():
-                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_NLOC)] = target.lines_of_code
-                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_VIOLATIONS)] = target.violation_count
-                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(target)
+            set_columns_for(OVERALL_HEADER_PREFIX, result_cache.overall)
+            for name, target in result_cache.targets.items():
+                set_columns_for(header(TARGET_HEADER_PREFIX, name), target.overall)
             writer.writerow(new_row)
 
 
