@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from lizard_mon.exceptions import *
 from lizard_mon.results import *
 import lizard_mon
