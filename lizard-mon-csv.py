@@ -49,16 +49,16 @@ def main():
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
         for timestamp, result_cache in iterate_history_file(args.history_path):
-            new_row = dict([
+            new_row = typing.cast(typing.Dict[str, str], dict([
                 (key, "") for key in fieldnames
-            ])
+            ]))
 
-            def set_columns_for(root, result):
-                new_row[header(root, HEADER_NLOC)] = result.lines_of_code
-                new_row[header(root, HEADER_VIOLATIONS)] = result.violations_count
-                new_row[header(root, HEADER_VIOLATIONS_NORMALISED)] = result.normalise_violations(result)
+            def set_columns_for(root, result: results.AnalysisResult):
+                new_row[header(root, HEADER_NLOC)] = str(result.lines_of_code)
+                new_row[header(root, HEADER_VIOLATIONS)] = str(result.violation_count)
+                new_row[header(root, HEADER_VIOLATIONS_NORMALISED)] = str(normalise_violations(result))
 
-            new_row[header(HEADER_TIMESTAMP)] = timestamp
+            new_row[header(HEADER_TIMESTAMP)] = str(timestamp)
             set_columns_for(OVERALL_HEADER_PREFIX, result_cache.overall)
             for name, target in result_cache.targets.items():
                 set_columns_for(header(TARGET_HEADER_PREFIX, name), target.overall)
@@ -66,7 +66,7 @@ def main():
 
 
 def normalise_violations(result: results.AnalysisResult):
-    if result.violation_count <= 0:
+    if result.violation_count <= 0 or result.lines_of_code <= 0:
         return 0.0
     return float(result.violation_count) / float(result.lines_of_code)
 
