@@ -10,6 +10,9 @@ import csv
 
 
 CSV_HEADER_SEPARATOR = ":"
+OVERALL_HEADER_PREFIX = "overall"
+TARGET_HEADER_PREFIX = "tgt"
+HEADER_TIMESTAMP = "timestamp"
 HEADER_NLOC = "nloc"
 HEADER_VIOLATIONS = "violations"
 HEADER_VIOLATIONS_NORMALISED = "violations-normalised"
@@ -32,16 +35,16 @@ def main():
         def header(*parts):
             return CSV_HEADER_SEPARATOR.join(parts)
 
-        fieldnames = [header("timestamp")]
+        fieldnames = [header(HEADER_TIMESTAMP)]
 
         def add_columns_for(root):
             fieldnames.append(header(root, HEADER_NLOC))
             fieldnames.append(header(root, HEADER_VIOLATIONS))
             fieldnames.append(header(root, HEADER_VIOLATIONS_NORMALISED))
 
-        add_columns_for("overall")
+        add_columns_for(OVERALL_HEADER_PREFIX)
         for target in target_list:
-            add_columns_for(header("tgt", target))
+            add_columns_for(header(TARGET_HEADER_PREFIX, target))
 
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
@@ -49,14 +52,14 @@ def main():
             new_row = dict([
                 (key, "") for key in fieldnames
             ])
-            new_row[header("timestamp")] = timestamp
-            new_row[header("overall", HEADER_NLOC)] = result.overall.lines_of_code
-            new_row[header("overall", HEADER_VIOLATIONS)] = result.overall.violation_count
-            new_row[header("overall", HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(result.overall)
+            new_row[header(HEADER_TIMESTAMP)] = timestamp
+            new_row[header(OVERALL_HEADER_PREFIX, HEADER_NLOC)] = result.overall.lines_of_code
+            new_row[header(OVERALL_HEADER_PREFIX, HEADER_VIOLATIONS)] = result.overall.violation_count
+            new_row[header(OVERALL_HEADER_PREFIX, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(result.overall)
             for name, target in result.targets.items():
-                new_row[header("tgt", name, HEADER_NLOC)] = target.lines_of_code
-                new_row[header("tgt", name, HEADER_VIOLATIONS)] = target.violation_count
-                new_row[header("tgt", name, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(target)
+                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_NLOC)] = target.lines_of_code
+                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_VIOLATIONS)] = target.violation_count
+                new_row[header(TARGET_HEADER_PREFIX, name, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(target)
             writer.writerow(new_row)
 
 
