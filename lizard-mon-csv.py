@@ -10,9 +10,13 @@ import csv
 
 
 CSV_HEADER_SEPARATOR = ":"
+OVERALL_HEADER_PREFIX = "overall"
+TARGET_HEADER_PREFIX = "tgt"
+HEADER_TIMESTAMP = "timestamp"
 HEADER_NLOC = "nloc"
 HEADER_VIOLATIONS = "violations"
 HEADER_VIOLATIONS_NORMALISED = "violations-normalised"
+HEADER_FILES = "files"
 
 
 def main():
@@ -32,36 +36,40 @@ def main():
         def header(*parts):
             return CSV_HEADER_SEPARATOR.join(parts)
 
-        fieldnames = [header("timestamp")]
+        fieldnames = [header(HEADER_TIMESTAMP)]
 
         def add_columns_for(root):
             fieldnames.append(header(root, HEADER_NLOC))
             fieldnames.append(header(root, HEADER_VIOLATIONS))
             fieldnames.append(header(root, HEADER_VIOLATIONS_NORMALISED))
+            fieldnames.append(header(root, HEADER_FILES))
 
-        add_columns_for("overall")
+        add_columns_for(OVERALL_HEADER_PREFIX)
         for target in target_list:
-            add_columns_for(header("tgt", target))
+            add_columns_for(header(TARGET_HEADER_PREFIX, target))
 
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
-        for timestamp, result in iterate_history_file(args.history_path):
-            new_row = dict([
+        for timestamp, result_cache in iterate_history_file(args.history_path):
+            new_row = typing.cast(typing.Dict[str, str], dict([
                 (key, "") for key in fieldnames
-            ])
-            new_row[header("timestamp")] = timestamp
-            new_row[header("overall", HEADER_NLOC)] = result.overall.lines_of_code
-            new_row[header("overall", HEADER_VIOLATIONS)] = result.overall.violation_count
-            new_row[header("overall", HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(result.overall)
-            for name, target in result.targets.items():
-                new_row[header("tgt", name, HEADER_NLOC)] = target.lines_of_code
-                new_row[header("tgt", name, HEADER_VIOLATIONS)] = target.violation_count
-                new_row[header("tgt", name, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(target)
+            ]))
+
+            def set_columns_for(root, result: results.AnalysisResult):
+                new_row[header(root, HEADER_NLOC)] = str(result.lines_of_code)
+                new_row[header(root, HEADER_VIOLATIONS)] = str(result.violation_count)
+                new_row[header(root, HEADER_VIOLATIONS_NORMALISED)] = str(normalise_violations(result))
+                new_row[header(root, HEADER_FILES)] = str(result.file_count)
+
+            new_row[header(HEADER_TIMESTAMP)] = str(timestamp)
+            set_columns_for(OVERALL_HEADER_PREFIX, result_cache.overall)
+            for name, target in result_cache.targets.items():
+                set_columns_for(header(TARGET_HEADER_PREFIX, name), target.overall)
             writer.writerow(new_row)
 
 
 def normalise_violations(result: results.AnalysisResult):
-    if result.violation_count <= 0:
+    if result.violation_count <= 0 or result.lines_of_code <= 0:
         return 0.0
     return float(result.violation_count) / float(result.lines_of_code)
 
