@@ -9,6 +9,12 @@ import json
 import csv
 
 
+CSV_HEADER_SEPARATOR = ":"
+HEADER_NLOC = "nloc"
+HEADER_VIOLATIONS = "violations"
+HEADER_VIOLATIONS_NORMALISED = "violations-normalised"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='utility for converting history.ndjson files from lizard-monitor to csv'
@@ -23,16 +29,19 @@ def main():
     target_list = scan_for_targets(args.history_path)
 
     with open(args.output, 'w', newline='') as output_file:
-        fieldnames = ["timestamp"]
+        def header(*parts):
+            return CSV_HEADER_SEPARATOR.join(parts)
+
+        fieldnames = [header("timestamp")]
 
         def add_columns_for(root):
-            fieldnames.append(root + "-nloc")
-            fieldnames.append(root + "-violations")
-            fieldnames.append(root + "-violations-normalised")
+            fieldnames.append(header(root, HEADER_NLOC))
+            fieldnames.append(header(root, HEADER_VIOLATIONS))
+            fieldnames.append(header(root, HEADER_VIOLATIONS_NORMALISED))
 
         add_columns_for("overall")
         for target in target_list:
-            add_columns_for(f"tgt:{target}")
+            add_columns_for(header("tgt", target))
 
         writer = csv.DictWriter(output_file, fieldnames)
         writer.writeheader()
@@ -40,14 +49,14 @@ def main():
             new_row = dict([
                 (key, "") for key in fieldnames
             ])
-            new_row["timestamp"] = timestamp
-            new_row["overall-nloc"] = result.overall.lines_of_code
-            new_row["overall-violations"] = result.overall.violation_count
-            new_row["overall-violations-normalised"] = normalise_violations(result.overall)
+            new_row[header("timestamp")] = timestamp
+            new_row[header("overall", HEADER_NLOC)] = result.overall.lines_of_code
+            new_row[header("overall", HEADER_VIOLATIONS)] = result.overall.violation_count
+            new_row[header("overall", HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(result.overall)
             for name, target in result.targets.items():
-                new_row[f"tgt:{name}-nloc"] = target.lines_of_code
-                new_row[f"tgt:{name}-violations"] = target.violation_count
-                new_row[f"tgt:{name}-violations-normalised"] = normalise_violations(target)
+                new_row[header("tgt", name, HEADER_NLOC)] = target.lines_of_code
+                new_row[header("tgt", name, HEADER_VIOLATIONS)] = target.violation_count
+                new_row[header("tgt", name, HEADER_VIOLATIONS_NORMALISED)] = normalise_violations(target)
             writer.writerow(new_row)
 
 
