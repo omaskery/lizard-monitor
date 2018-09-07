@@ -25,6 +25,10 @@ def main():
     parser.add_argument(
         '-v', action='count', default=0, dest="verbosity", help='level of verbosity'
     )
+    parser.add_argument(
+        '--at-date',
+        help='date to checkout repositories to before running static analysis "<abbrev. month> <day> <year>"'
+    )
     args = parser.parse_args()
 
     os.chdir(args.path)
@@ -45,7 +49,11 @@ def main():
     for target in targets:
         print(f"{target.name} ({target.repo_info.url}):")
         root_repo_dir = os.path.join(base_path, "repos")
-        repo = get_repo(root_repo_dir, target.name, target.repo_info)
+        try:
+            repo = get_repo(root_repo_dir, target.name, target.repo_info, args.at_date)
+        except InvalidRepoDate as ex:
+            print(f"  {ex}")
+            continue
 
         print(f"  running analysis on {repo.working_tree_dir}")
         analysis_results = analyse_repo(repo, target.analysis_settings, args.verbosity)
@@ -69,7 +77,8 @@ def main():
         history_file.write(f"{json.dumps(data)}\n")
 
 
-def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings', verbosity: int) -> 'TargetResultCache':
+def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings',
+                 verbosity: int) -> 'TargetResultCache':
     result = TargetResultCache(AnalysisResult(), {})
 
     analysis_dir = os.path.relpath(repo.working_tree_dir)
@@ -137,7 +146,7 @@ def die(message, exit_code=-1) -> typing.NoReturn:
     sys.exit(exit_code)
 
 
-def get_repo(repos_dir, name, repo_info):
+def get_repo(repos_dir: str, name: str, repo_info: lizard_mon.config.RepositoryInfo, at_date: str = None) -> git.Repo:
     repo_working_dir = os.path.join(repos_dir, name)
     if not os.path.isdir(repo_working_dir):
         print(f"  cloning '{name}' for first time from: {repo_info.url}")
@@ -149,13 +158,24 @@ def get_repo(repos_dir, name, repo_info):
             raise LizardMonException(f"target {name} repo has no remotes to pull from")
         else:
             remote = repo.remotes[0]
-            print(f"  pulling any changes from remote {remote.name}")
+            print(f"  fetching any changes from remote {remote.name}")
             with ProgressPrinter() as progress:
-                remote.pull(progress=progress)
-        if repo.active_branch.name != repo_info.branch:
-            print(f"  checking out branch {repo_info.branch}")
-            repo.git.checkout(repo_info.branch)
+                remote.fetch(progress=progress)
+        if at_date is None:
+            if repo.head.is_detached or repo.active_branch.name != repo_info.branch:
+                print(f"  checking out branch {repo_info.branch}")
+                repo.git.checkout(repo_info.branch)
+        else:
+            commit_hash_at_date = repo.git.rev_list("-1", f'--before="{at_date}"', repo_info.branch)
+            if not commit_hash_at_date:
+                raise InvalidRepoDate(f"unable to checkout {name} at {at_date}")
+            print(f"  checkout out at date {at_date} ({commit_hash_at_date})")
+            repo.git.checkout(commit_hash_at_date)
     return repo
+
+
+class InvalidRepoDate(LizardMonException):
+    pass
 
 
 class ProgressPrinter(git.RemoteProgress):
