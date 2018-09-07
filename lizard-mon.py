@@ -43,9 +43,9 @@ def main():
             cache = yaml.safe_load(cache_file)
             previous_results = ResultCache.from_yaml(cache)
     else:
-        previous_results = ResultCache(AnalysisResult(0, 0), {})
+        previous_results = ResultCache(AnalysisResult(), {})
 
-    overall_analysis_results = ResultCache(AnalysisResult(0, 0), {})
+    overall_analysis_results = ResultCache(AnalysisResult(), {})
     for target in targets:
         print(f"{target.name} ({target.repo_info.url}):")
         root_repo_dir = os.path.join(base_path, "repos")
@@ -79,7 +79,7 @@ def main():
 
 def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisSettings',
                  verbosity: int) -> 'TargetResultCache':
-    result = TargetResultCache(AnalysisResult(0, 0), {})
+    result = TargetResultCache(AnalysisResult(), {})
 
     analysis_dir = os.path.relpath(repo.working_tree_dir)
 
@@ -128,7 +128,11 @@ def analyse_repo(repo: git.Repo, analysis_settings: 'lizard_mon.config.AnalysisS
                 print(f"    - {fn.long_name} [{fn.start_line}:{fn.end_line}]")
                 print(f"      violations: {', '.join(violations)}")
 
-        file_result = AnalysisResult(violations_in_this_file, analysed_file.nloc)
+        file_result = AnalysisResult(
+            violation_count=violations_in_this_file,
+            lines_of_code=analysed_file.nloc,
+            file_count=1,
+        )
         if verbosity > 0:
             print(f"    results for this file: {file_result}")
         result.overall.merge_with(file_result)

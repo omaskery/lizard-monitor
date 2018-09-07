@@ -4,27 +4,31 @@ import typing
 
 class AnalysisResult:
 
-    def __init__(self, violation_count: int, lines_of_code: int):
+    def __init__(self, violation_count: int = 0, lines_of_code: int = 0, file_count: int = 0):
         self.violation_count = violation_count
         self.lines_of_code = lines_of_code
+        self.file_count = file_count
 
     def merge_with(self, other: 'AnalysisResult'):
         self.violation_count += other.violation_count
         self.lines_of_code += other.lines_of_code
+        self.file_count += other.file_count
 
     def difference(self, other: 'AnalysisResult') -> 'AnalysisResult':
         return AnalysisResult(
             violation_count=self.violation_count-other.violation_count,
             lines_of_code=self.lines_of_code-other.lines_of_code,
+            file_count=self.file_count-other.file_count,
         )
 
     def __str__(self):
-        return f"[violations: {self.violation_count}, NLOC={self.lines_of_code}]"
+        return f"[violations: {self.violation_count}, NLOC={self.lines_of_code}, files={self.file_count}]"
 
     def to_yaml(self):
         return {
             "violation_count": self.violation_count,
             "lines_of_code": self.lines_of_code,
+            "file_count": self.file_count,
         }
 
     @staticmethod
@@ -32,6 +36,7 @@ class AnalysisResult:
         return AnalysisResult(
             data["violation_count"],
             data["lines_of_code"],
+            data["file_count"],
         )
 
 
@@ -44,8 +49,8 @@ class ResultCache:
     def difference(self, other: 'ResultCache') -> 'ResultCache':
         targets = {}
         for key in set(itertools.chain(self.targets.keys(), other.targets.keys())):
-            target_a = self.targets.get(key, TargetResultCache(AnalysisResult(0, 0), {}))
-            target_b = other.targets.get(key, TargetResultCache(AnalysisResult(0, 0), {}))
+            target_a = self.targets.get(key, TargetResultCache(AnalysisResult(), {}))
+            target_b = other.targets.get(key, TargetResultCache(AnalysisResult(), {}))
             targets[key] = target_a.difference(target_b)
         return ResultCache(
             overall=self.overall.difference(other.overall),
@@ -100,8 +105,8 @@ class TargetResultCache:
     def difference(self, other: 'TargetResultCache') -> 'TargetResultCache':
         files = {}
         for key in set(itertools.chain(self.files.keys(), other.files.keys())):
-            file_a = self.files.get(key, AnalysisResult(0, 0))
-            file_b = other.files.get(key, AnalysisResult(0, 0))
+            file_a = self.files.get(key, AnalysisResult())
+            file_b = other.files.get(key, AnalysisResult())
             files[key] = file_a.difference(file_b)
         return TargetResultCache(
             overall=self.overall.difference(other.overall),
@@ -126,4 +131,7 @@ class TargetResultCache:
 
     @staticmethod
     def from_shallow_yaml(data):
-        return AnalysisResult.from_yaml(data)
+        return TargetResultCache(
+            overall=AnalysisResult.from_yaml(data),
+            files={},
+        )
