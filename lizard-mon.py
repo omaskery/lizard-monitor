@@ -165,6 +165,9 @@ def get_repo(repos_dir: str, name: str, repo_info: lizard_mon.config.RepositoryI
             if repo.head.is_detached or repo.active_branch.name != repo_info.branch:
                 print(f"  checking out branch {repo_info.branch}")
                 repo.git.checkout(repo_info.branch)
+            else:
+                print(f"  ensuring we're up to date on our current branch")
+                remote.pull()
         else:
             commit_hash_at_date = repo.git.rev_list("-1", f'--before="{at_date}"', repo_info.branch)
             if not commit_hash_at_date:
