@@ -175,7 +175,7 @@ def get_repo(repos_dir: str, name: str, repo_info: lizard_mon.config.RepositoryI
             else:
                 print(f"  not doing a pull because we're on detached HEAD")
         else:
-            commit_hash_at_date = repo.git.rev_list("-1", f'--before="{at_date}"', repo_info.branch)
+            commit_hash_at_date = repo.git.rev_list("-1", f'--before={at_date}', repo_info.branch)
             if not commit_hash_at_date:
                 raise InvalidRepoDate(f"unable to checkout {name} at {at_date}")
             print(f"  checkout out at date {at_date} ({commit_hash_at_date})")
