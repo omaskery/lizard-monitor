@@ -73,7 +73,11 @@ def main():
     history_path = os.path.join(base_path, "history.ndjson")
     with open(history_path, 'a') as history_file:
         data = overall_analysis_results.to_shallow_yaml()
-        data["timestamp"] = datetime.datetime.utcnow().isoformat()
+        if args.at_date is None:
+            timestamp = datetime.datetime.utcnow().isoformat()
+        else:
+            timestamp = datetime.datetime.strptime(args.at_date, "%b %d %Y").isoformat()
+        data["timestamp"] = timestamp
         history_file.write(f"{json.dumps(data)}\n")
 
 
